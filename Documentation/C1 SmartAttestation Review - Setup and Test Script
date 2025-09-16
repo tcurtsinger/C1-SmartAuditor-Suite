@@ -1,0 +1,259 @@
+/**
+ * C1 SmartAttestation Review - Setup and Test Script
+ * Run this in a background script to configure and test the system
+ */
+
+// ============================================
+// PART 1: CREATE SYSTEM PROPERTIES
+// ============================================
+function createSystemProperties() {
+    gs.info('Creating C1 SmartAttestation Review system properties...');
+    
+    var properties = [
+        {
+            name: 'x_n1ll2_c1_smart_6.llm.enable_auto_review',
+            value: 'true',
+            description: 'Enable automatic review of attestations using AI',
+            type: 'boolean'
+        },
+        {
+            name: 'x_n1ll2_c1_smart_6.llm.enable_auto_actions',
+            value: 'true',
+            description: 'Enable automatic actions based on AI review results',
+            type: 'boolean'
+        },
+        {
+            name: 'x_n1ll2_c1_smart_6.llm.auto_approve_threshold',
+            value: '3',
+            description: 'Risk score threshold for auto-approval (1-10)',
+            type: 'integer'
+        },
+        {
+            name: 'x_n1ll2_c1_smart_6.llm.default_provider',
+            value: 'OpenAI',
+            description: 'Default LLM provider to use',
+            type: 'string'
+        },
+        {
+            name: 'x_n1ll2_c1_smart_6.llm.max_retry_attempts',
+            value: '3',
+            description: 'Maximum retry attempts for LLM API calls',
+            type: 'integer'
+        },
+        {
+            name: 'x_n1ll2_c1_smart_6.llm.timeout_seconds',
+            value: '30',
+            description: 'Timeout for LLM API calls in seconds',
+            type: 'integer'
+        }
+    ];
+    
+    properties.forEach(function(prop) {
+        gs.setProperty(prop.name, prop.value, prop.description);
+        gs.info('Created property: ' + prop.name + ' = ' + prop.value);
+    });
+    
+    gs.info('System properties created successfully');
+}
+
+// ============================================
+// PART 2: CREATE SAMPLE LLM CONFIGURATION
+// ============================================
+function createSampleLLMConfig() {
+    gs.info('Creating sample LLM configuration...');
+    
+    // Check if config already exists
+    var existing = new GlideRecord('x_n1ll2_c1_smart_6_llm_config');
+    existing.addQuery('provider', 'OpenAI');
+    existing.query();
+    
+    if (existing.hasNext()) {
+        gs.info('OpenAI configuration already exists');
+        return existing.next() ? existing.getUniqueValue() : null;
+    }
+    
+    // Create new OpenAI configuration
+    var config = new GlideRecord('x_n1ll2_c1_smart_6_llm_config');
+    config.initialize();
+    config.provider = 'OpenAI';
+    config.api_endpoint = 'https://api.openai.com/v1/chat/completions';
+    config.api_key = 'YOUR_OPENAI_API_KEY_HERE'; // Replace with actual API key
+    config.model_name = 'gpt-4';
+    config.enabled = false; // Set to false initially for safety
+    config.max_tokens = 2000;
+    config.temperature = 0.3;
+    var configId = config.insert();
+    
+    gs.info('Created OpenAI configuration: ' + configId);
+    gs.info('IMPORTANT: Update the API key and set enabled=true before testing');
+    
+    return configId;
+}
+
+// ============================================
+// PART 3: TEST LLM CONNECTION
+// ============================================
+function testLLMConnection() {
+    gs.info('Testing LLM connection...');
+    
+    try {
+        var api = new x_n1ll2_c1_smart_6.SmartAttestationReviewAPI();
+        var result = api.testConnection();
+        
+        if (result.success) {
+            gs.info('SUCCESS: ' + result.message);
+            gs.info('Provider: ' + result.provider);
+        } else {
+            gs.error('FAILED: ' + result.message);
+        }
+        
+        return result;
+    } catch (e) {
+        gs.error('Error testing connection: ' + e.getMessage());
+        return { success: false, error: e.getMessage() };
+    }
+}
+
+// ============================================
+// PART 4: TEST WITH SAMPLE ATTESTATION
+// ============================================
+function testSampleAttestation() {
+    gs.info('Testing with sample attestation data...');
+    
+    try {
+        // Create test data
+        var testData = {
+            controlObjectiveDescription: 'Ensure that access to sensitive data is restricted to authorized personnel only.',
+            supplementalGuidance: 'Implement role-based access controls, regular access reviews, and audit logging.',
+            attestationResponse: 'We have implemented RBAC using Active Directory groups. Access reviews are conducted quarterly by department managers. All access to sensitive data is logged in our SIEM system.',
+            controlNumber: 'AC-2',
+            framework: 'NIST 800-53'
+        };
+        
+        // Test prompt building
+        var promptBuilder = new x_n1ll2_c1_smart_6.PromptBuilder();
+        var prompt = promptBuilder.buildStructuredPrompt(testData);
+        gs.info('Generated prompt length: ' + prompt.length + ' characters');
+        
+        // Test LLM call
+        var llmConnector = new x_n1ll2_c1_smart_6.LLMConnector();
+        var llmResponse = llmConnector.sendPrompt(prompt);
+        
+        if (llmResponse.success) {
+            gs.info('LLM Response received successfully');
+            gs.info('Provider: ' + llmResponse.provider);
+            
+            // Test analysis parsing
+            var analyzer = new x_n1ll2_c1_smart_6.ComplianceAnalyzer();
+            var analysis = analyzer.parseAnalysis(llmResponse.content, 'json');
+            
+            gs.info('Analysis Results:');
+            gs.info('- Compliance Status: ' + analysis.compliance_status);
+            gs.info('- Risk Score: ' + analysis.risk_score);
+            gs.info('- Gaps: ' + analysis.gaps.length + ' identified');
+            gs.info('- Recommendations: ' + analysis.recommendations.length + ' provided');
+            
+            return analysis;
+        } else {
+            gs.error('LLM call failed: ' + llmResponse.error);
+            return null;
+        }
+        
+    } catch (e) {
+        gs.error('Error in sample test: ' + e.getMessage());
+        return null;
+    }
+}
+
+// ============================================
+// PART 5: CREATE TEST ATTESTATION RECORD
+// ============================================
+function createTestAttestation() {
+    gs.info('Creating test attestation record...');
+    
+    // This would need to be customized based on your actual attestation setup
+    // The following is a simplified example
+    
+    try {
+        // First, find a control objective to link to
+        var co = new GlideRecord('sn_compliance_policy_statement');
+        co.setLimit(1);
+        co.query();
+        
+        if (!co.next()) {
+            gs.warn('No control objectives found. Please create control objectives first.');
+            return null;
+        }
+        
+        gs.info('Using control objective: ' + co.getDisplayValue());
+        
+        // Create a test attestation
+        // Note: This is simplified - actual implementation would depend on your assessment configuration
+        /*
+        var attestation = new GlideRecord('asmt_assessment_instance');
+        attestation.initialize();
+        attestation.string_value = 'Test attestation response for SmartAttestation Review testing';
+        attestation.state = 'in_progress';
+        // Set other required fields based on your configuration
+        var attestationId = attestation.insert();
+        
+        gs.info('Created test attestation: ' + attestationId);
+        return attestationId;
+        */
+        
+        gs.info('Test attestation creation skipped - implement based on your assessment configuration');
+        return null;
+        
+    } catch (e) {
+        gs.error('Error creating test attestation: ' + e.getMessage());
+        return null;
+    }
+}
+
+// ============================================
+// MAIN EXECUTION
+// ============================================
+function main() {
+    gs.info('========================================');
+    gs.info('C1 SmartAttestation Review Setup Script');
+    gs.info('========================================');
+    
+    // Step 1: Create system properties
+    createSystemProperties();
+    gs.info('');
+    
+    // Step 2: Create sample LLM configuration
+    var configId = createSampleLLMConfig();
+    gs.info('');
+    
+    // Step 3: Test connection (will fail if API key not set)
+    if (configId) {
+        gs.info('To test the connection:');
+        gs.info('1. Navigate to x_n1ll2_c1_smart_6_llm_config table');
+        gs.info('2. Update the API key for the OpenAI configuration');
+        gs.info('3. Set enabled = true');
+        gs.info('4. Run testLLMConnection() function');
+    }
+    
+    gs.info('');
+    gs.info('========================================');
+    gs.info('Setup Complete!');
+    gs.info('========================================');
+    gs.info('');
+    gs.info('Next Steps:');
+    gs.info('1. Configure your LLM provider API key in the LLM Configuration table');
+    gs.info('2. Enable the configuration (set enabled=true)');
+    gs.info('3. Test the connection using testLLMConnection()');
+    gs.info('4. Create or identify test attestations');
+    gs.info('5. Test the full workflow with a real attestation');
+}
+
+// Run the setup
+main();
+
+// Export functions for individual testing
+var exportedFunctions = {
+    testConnection: testLLMConnection,
+    testSample: testSampleAttestation,
+    createTestAttestation: createTestAttestation
+};
